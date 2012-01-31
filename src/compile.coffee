@@ -1,47 +1,44 @@
-async = require("async")
 utils = require("kanso-utils/utils")
-spawn = require("child_process").spawn
-path = require("path")
-modules = require("kanso-utils/modules")
-attachments = require("kanso-utils/attachments")
-stylus = require('stylus')
+pathUtil = require('path')
+attachments = require('kanso-utils/attachments')
+precompiler = require('kanso-precompiler-base')
+stylusCompiler = require('stylus')
 
 module.exports =
+  after: "attachments"
   run: (root, path, settings, doc, callback) ->
-    return callback(null, doc)  unless settings["stylus"]
-    return callback(null, doc)  if not settings["stylus"]["compile"]
+    stylusPaths = settings["stylus"]?["compile"]    
+    compression = settings["stylus"]?["compress"] ? ""
+    # Check the settings are valid
+    unless stylusPaths?
+      console.log "No stylus settings found - you should provide a stylus/compile setting"
+      return callback(null, doc)
     
-    attach_paths = settings["stylus"]["compile"] or []
-    attach_paths = [ attach_paths ] unless Array.isArray(attach_paths)
-    
-    apply_compile_attachments = async.apply(compile_attachments, doc, path, settings)
 
-    async.parallel [
-      async.apply(async.forEach, attach_paths, apply_compile_attachments)
-    ], (err) -> callback err, doc
+    compile_stylus = (filename, callback) ->
+      # Make template filename relative and Strip off the extension
+      name = utils.relpath(filename, path).replace(/\.styl$/, ".css")
+      console.log "Compiling Styl Template: " + name      
 
-compile_attachments = (doc, path, settings, paths, callback) ->
-  pattern = /.*\.styl$/i
-  utils.find utils.abspath(paths, path), pattern, (err, data) ->
-    return callback(err)  if err
-    apply_compile_attachment = async.apply(compile_attachment, doc, path, settings)
-    async.forEach data, apply_compile_attachment, callback
+      # Run the stylus compiler
+      stylusCompiler(
+        fs.readFileSync(filename, 'utf8'),
+        compress: compression
+      )
+      # Allow files from the same folder as the file to be imported 
+      .include(pathUtil.dirname(filename))
+      # Render the new css contents
+      .render((err, css) ->
+        # Add the rendered css to the design document as an attachment
+        attachments.add(doc, name, name, css)
+        # Callback to let processPaths know that whether the css was generated successfully
+        callback(err)
+      )
 
-compile_attachment = (doc, path, settings, filename, callback) ->
-  name = utils.relpath(filename, path).replace(/\.styl$/, ".css")
-  compile_stylus path, filename, settings, (err, css) ->
-    return callback(err)  if err
-    attachments.add(doc, name, name, css)
-    callback()
+    console.log "Running Stylus pre-compiler"
 
-compile_stylus = (project_path, filename, settings, callback) ->
-  console.log "Compiling " + utils.relpath(filename, project_path)
-  content = fs.readFileSync filename, 'utf8'
-  result = ''
-  stylus(content, compress: settings["stylus"]["compress"])
-    .include(path.dirname(filename))
-    .render((err, css) -> 
-      throw err if err
-      result = css
-    )
-  callback null, result
+    # Extract the template paths from the settings
+    stylusPaths = precompiler.normalizePaths(stylusPaths, path)
+
+    # Run processTemplate, asynchronously, on each of the files that match the given pattern, in the given paths 
+    precompiler.processPaths(stylusPaths, /.*\.styl$/i, compile_stylus, (err)-> callback(err, doc))

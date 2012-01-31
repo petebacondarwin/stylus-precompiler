@@ -1,65 +1,43 @@
-var async, attachments, compile_attachment, compile_attachments, compile_stylus, modules, path, spawn, stylus, utils;
-async = require("async");
-utils = require("kanso-utils/utils");
-spawn = require("child_process").spawn;
-path = require("path");
-modules = require("kanso-utils/modules");
-attachments = require("kanso-utils/attachments");
-stylus = require('stylus');
-module.exports = {
-  run: function(root, path, settings, doc, callback) {
-    var apply_compile_attachments, attach_paths;
-    if (!settings["stylus"]) {
-      return callback(null, doc);
+(function() {
+  var attachments, pathUtil, precompiler, stylusCompiler, utils;
+
+  utils = require("kanso-utils/utils");
+
+  pathUtil = require('path');
+
+  attachments = require('kanso-utils/attachments');
+
+  precompiler = require('kanso-precompiler-base');
+
+  stylusCompiler = require('stylus');
+
+  module.exports = {
+    after: "attachments",
+    run: function(root, path, settings, doc, callback) {
+      var compile_stylus, compression, stylusPaths, _ref, _ref2, _ref3;
+      stylusPaths = (_ref = settings["stylus"]) != null ? _ref["compile"] : void 0;
+      compression = (_ref2 = (_ref3 = settings["stylus"]) != null ? _ref3["compress"] : void 0) != null ? _ref2 : "";
+      if (stylusPaths == null) {
+        console.log("No stylus settings found - you should provide a stylus/compile setting");
+        return callback(null, doc);
+      }
+      compile_stylus = function(filename, callback) {
+        var name;
+        name = utils.relpath(filename, path).replace(/\.styl$/, ".css");
+        console.log("Compiling Styl Template: " + name);
+        return stylusCompiler(fs.readFileSync(filename, 'utf8'), {
+          compress: compression
+        }).include(pathUtil.dirname(filename)).render(function(err, css) {
+          attachments.add(doc, name, name, css);
+          return callback(err);
+        });
+      };
+      console.log("Running Stylus pre-compiler");
+      stylusPaths = precompiler.normalizePaths(stylusPaths, path);
+      return precompiler.processPaths(stylusPaths, /.*\.styl$/i, compile_stylus, function(err) {
+        return callback(err, doc);
+      });
     }
-    if (!settings["stylus"]["compile"]) {
-      return callback(null, doc);
-    }
-    attach_paths = settings["stylus"]["compile"] || [];
-    if (!Array.isArray(attach_paths)) {
-      attach_paths = [attach_paths];
-    }
-    apply_compile_attachments = async.apply(compile_attachments, doc, path, settings);
-    return async.parallel([async.apply(async.forEach, attach_paths, apply_compile_attachments)], function(err) {
-      return callback(err, doc);
-    });
-  }
-};
-compile_attachments = function(doc, path, settings, paths, callback) {
-  var pattern;
-  pattern = /.*\.styl$/i;
-  return utils.find(utils.abspath(paths, path), pattern, function(err, data) {
-    var apply_compile_attachment;
-    if (err) {
-      return callback(err);
-    }
-    apply_compile_attachment = async.apply(compile_attachment, doc, path, settings);
-    return async.forEach(data, apply_compile_attachment, callback);
-  });
-};
-compile_attachment = function(doc, path, settings, filename, callback) {
-  var name;
-  name = utils.relpath(filename, path).replace(/\.styl$/, ".css");
-  return compile_stylus(path, filename, settings, function(err, css) {
-    if (err) {
-      return callback(err);
-    }
-    attachments.add(doc, name, name, css);
-    return callback();
-  });
-};
-compile_stylus = function(project_path, filename, settings, callback) {
-  var content, result;
-  console.log("Compiling " + utils.relpath(filename, project_path));
-  content = fs.readFileSync(filename, 'utf8');
-  result = '';
-  stylus(content, {
-    compress: settings["stylus"]["compress"]
-  }).include(path.dirname(filename)).render(function(err, css) {
-    if (err) {
-      throw err;
-    }
-    return result = css;
-  });
-  return callback(null, result);
-};
+  };
+
+}).call(this);

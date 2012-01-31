@@ -1,0 +1,14 @@
+{
+    "name": "stylustest",
+    "version": "0.0.1",
+    "description": "Stylus Test",
+    "stylus": {
+        "compile": [
+            "css/test.styl"
+        ]
+    },
+    "dependencies": {
+        "attachments": null,
+        "stylus-precompiler": null
+    }
+}
